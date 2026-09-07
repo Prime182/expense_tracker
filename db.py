@@ -1,7 +1,12 @@
 """Postgres access: pool, schema, per-user seeding."""
 import os
+from dotenv import load_dotenv
 from psycopg_pool import ConnectionPool
 from psycopg.rows import dict_row
+
+# Local development reads .env; deployed environments already have the real variables
+# and those win, since load_dotenv does not override what is already set.
+load_dotenv()
 
 DSN = os.environ.get("DATABASE_URL", "")
 if DSN.startswith("postgres://"):  # SQLAlchemy-style URL some providers hand out
