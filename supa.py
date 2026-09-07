@@ -5,7 +5,6 @@ reached with the caller's own access token so the database enforces isolation --
 this module never has to remember to add a user_id filter for reads.
 """
 import os
-import time
 
 import httpx
 import jwt
@@ -17,7 +16,6 @@ load_dotenv()
 
 URL = (os.environ.get("SUPABASE_URL") or "").rstrip("/")
 PUBLISHABLE_KEY = os.environ.get("SUPABASE_PUBLISHABLE_KEY", "")
-SECRET_KEY = os.environ.get("SUPABASE_SECRET_KEY", "")
 JWKS_URL = os.environ.get("SUPABASE_JWKS_URL") or f"{URL}/auth/v1/.well-known/jwks.json"
 
 if not URL or not PUBLISHABLE_KEY:
@@ -138,14 +136,6 @@ def update(token: str, table: str, params: dict, patch: dict) -> list:
                    headers=_headers(token, {"Prefer": "return=representation"}))
     if r.status_code >= 400:
         _raise(r, "Could not update that")
-    return r.json()
-
-
-def upsert(token: str, table: str, row: dict, on_conflict: str) -> list:
-    r = http.post(f"{REST}/{table}", params={"on_conflict": on_conflict}, json=row,
-                  headers=_headers(token, {"Prefer": "return=representation,resolution=merge-duplicates"}))
-    if r.status_code >= 400:
-        _raise(r, "Could not save that")
     return r.json()
 
 
