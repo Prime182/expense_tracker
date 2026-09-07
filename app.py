@@ -307,14 +307,20 @@ def del_limit(lid: int, me: Session = ME):
 
 # ---------------------------------------------------------------- static
 
-@app.get("/healthz")
+# api_route with HEAD: uptime monitors send HEAD by default, and @app.get alone
+# answers those with 405.
+@app.api_route("/healthz", methods=["GET", "HEAD"])
 def healthz():
-    return {"ok": supa.health()}
+    # Fail loudly when Supabase is unreachable -- a 200 here would tell a monitor
+    # everything is fine while every page in the app was actually broken.
+    if not supa.health():
+        raise HTTPException(503, "Supabase unreachable")
+    return {"ok": True}
 
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def index():
     return FileResponse("static/index.html")
