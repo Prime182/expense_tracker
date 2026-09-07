@@ -5,8 +5,8 @@ const $$ = s => [...document.querySelectorAll(s)];
 // distinguishable -- three teals in a row read as one blob on a donut.
 // Two sets: the deep wordmark teal sings on white and disappears on navy, so the
 // dark theme uses lifted variants of the same hues. setTheme() swaps them.
-const PALETTE_LIGHT = ['#066c7e','#c77d29','#3c9ca2','#7a5ea8','#0f8a6a','#d1495b','#1ec0e4','#e08b4c','#2a7a94','#5fd8f0'];
-const PALETTE_DARK  = ['#3fb5cc','#e8a54a','#6fcdd4','#a68ad4','#34c99b','#ff8a99','#7ee0f5','#f0a76a','#5fa8c4','#a8e8f5'];
+const PALETTE_LIGHT = ['#0b8fa8','#c77d29','#0b0f10','#7a5ea8','#0f8a6a','#d1495b','#1ec0e4','#e08b4c','#5b696d','#8ad9ea'];
+const PALETTE_DARK  = ['#1ec0e4','#e8a54a','#8ad9ea','#a68ad4','#34c99b','#ff8a99','#5fd8f0','#f0a76a','#9aa6a9','#c9eef7'];
 let PALETTE = PALETTE_LIGHT;
 const DOW = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
