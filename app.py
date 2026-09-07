@@ -60,14 +60,18 @@ def _session_response(auth: dict) -> dict:
 def signup(body: Credentials):
     if INVITE_CODE and not hmac.compare_digest(body.invite_code.strip(), INVITE_CODE):
         raise HTTPException(403, "Invalid invite code")
-    created = supa.sign_up(body.email.lower().strip(), body.password)
+    email = body.email.lower().strip()
+    created = supa.sign_up(email, body.password)
 
-    # With email confirmation switched on, signup returns a user but no session.
-    # That is a success, not an error -- report it as one so the UI can say so plainly.
+    # Admin-created accounts come back confirmed but without a session, so sign in
+    # to get one. Only a project with no service key configured can still land in
+    # the confirm-by-email flow.
     if not created.get("access_token"):
-        return {"pending": True,
-                "message": "Account created. Check your email for the confirmation link, "
-                           "then come back and sign in."}
+        if not supa.SECRET_KEY:
+            return {"pending": True,
+                    "message": "Account created. Check your email for the confirmation link, "
+                               "then come back and sign in."}
+        created = supa.sign_in(email, body.password)
 
     session = _session_response(created)
     supa.seed_user(session["access_token"], created["user"]["id"])

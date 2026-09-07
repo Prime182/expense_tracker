@@ -16,6 +16,7 @@ load_dotenv()
 
 URL = (os.environ.get("SUPABASE_URL") or "").rstrip("/")
 PUBLISHABLE_KEY = os.environ.get("SUPABASE_PUBLISHABLE_KEY", "")
+SECRET_KEY = os.environ.get("SUPABASE_SECRET_KEY", "")
 JWKS_URL = os.environ.get("SUPABASE_JWKS_URL") or f"{URL}/auth/v1/.well-known/jwks.json"
 
 if not URL or not PUBLISHABLE_KEY:
@@ -65,14 +66,27 @@ def _raise(resp: httpx.Response, fallback: str):
 # ---------------------------------------------------------------- auth
 
 def sign_up(email: str, password: str) -> dict:
-    r = http.post(f"{AUTH}/signup", json={"email": email, "password": password})
+    """Create an account, already confirmed, without sending mail.
+
+    The public /signup endpoint sends a confirmation email whenever the project
+    has "Confirm email" enabled, and the built-in mailer is capped at a couple of
+    messages an hour -- past that it returns 429 and creates nothing at all.
+    Creating the user through the admin endpoint with email_confirm skips the
+    mailer entirely. Access here is already gated by INVITE_CODE, which is what
+    actually keeps strangers out; email confirmation was adding no protection.
+    """
+    if not SECRET_KEY:
+        r = http.post(f"{AUTH}/signup", json={"email": email, "password": password})
+    else:
+        r = http.post(f"{AUTH}/admin/users",
+                      json={"email": email, "password": password, "email_confirm": True},
+                      headers={"apikey": SECRET_KEY, "Authorization": f"Bearer {SECRET_KEY}"})
     if r.status_code == 429:
-        # Supabase's built-in mailer is capped at a few messages an hour, so with
-        # "Confirm email" on, signups fail here and no account is created at all.
-        raise HTTPException(429, "Sign-ups are temporarily blocked by the email provider's "
-                                 "rate limit. Turn off 'Confirm email' in the Supabase "
-                                 "Authentication settings, or try again in an hour.")
+        raise HTTPException(429, "Too many sign-up attempts. Please try again shortly.")
     if r.status_code >= 400:
+        body = r.json() if r.content else {}
+        if "already" in str(body).lower():
+            raise HTTPException(409, "An account with that email already exists. Try signing in.")
         _raise(r, "Could not create that account")
     return r.json()
 

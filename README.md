@@ -57,6 +57,11 @@ python3 test_analytics.py    # aggregation self-check
 | `SUPABASE_JWKS_URL` | no | Defaults to `<SUPABASE_URL>/auth/v1/.well-known/jwks.json` |
 | `INVITE_CODE` | no | Signup is refused unless it matches. **Unset means signup is open to anyone with the URL.** |
 
+Accounts are created through Supabase's admin endpoint with `email_confirm`, so no
+confirmation mail is sent and the built-in mailer's few-per-hour cap never blocks a
+signup. `INVITE_CODE` is what gates access. Without `SUPABASE_SECRET_KEY` set, signup
+falls back to the public endpoint and the project's own confirm-by-email flow.
+
 ## Deploying
 
 `render.yaml` defines the service. Every secret is marked `sync: false`, so set the values
