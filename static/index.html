@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Expense Tracker</title>
+<meta name="description" content="Personal expense tracking with automated analytics, anomaly detection and multi-page reporting.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%234f46e5'/><text y='72' x='50' text-anchor='middle' font-size='58' fill='white' font-family='sans-serif'>%E2%82%B9</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!-- ================= AUTH ================= -->
+<div id="authView" class="auth-wrap hide">
+  <div class="auth-card">
+    <div class="brand-dot">₹</div>
+    <h1 id="authTitle">Welcome back</h1>
+    <p class="sub" id="authSub">Sign in to pick up where you left off.</p>
+    <form id="authForm">
+      <label for="email">Email</label>
+      <input id="email" type="email" autocomplete="email" required placeholder="you@example.com">
+      <label for="password">Password</label>
+      <input id="password" type="password" autocomplete="current-password" required minlength="8" placeholder="At least 8 characters">
+      <div id="inviteWrap" class="hide">
+        <label for="invite">Invite code</label>
+        <input id="invite" type="text" placeholder="Required to create an account">
+      </div>
+      <div id="authMsg" class="msg hide"></div>
+      <button class="btn primary wide" style="margin-top:22px" id="authBtn" type="submit">Sign in</button>
+    </form>
+    <div class="switch-line">
+      <span id="switchText">New here?</span>
+      <button type="button" id="switchBtn">Create an account</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= APP ================= -->
+<div id="appView" class="shell hide">
+  <aside class="side" id="side">
+    <div class="logo"><span class="brand-dot">₹</span> Expense Tracker</div>
+    <div class="nav-label">Analytics</div>
+    <button class="nav active" data-page="overview">◧ Overview</button>
+    <button class="nav" data-page="daily">◷ Daily &amp; Weekly</button>
+    <button class="nav" data-page="monthly">▦ Monthly</button>
+    <button class="nav" data-page="category">◕ Category</button>
+    <button class="nav" data-page="payment">▤ Payment</button>
+    <button class="nav" data-page="alltime">◮ All-Time</button>
+    <div class="nav-label">Manage</div>
+    <button class="nav" data-page="log">≡ Transactions</button>
+    <button class="nav" data-page="settings">⚙ Settings</button>
+    <button class="nav" data-page="help">? Guide</button>
+    <div class="side-foot">
+      <div id="userEmail" style="margin-bottom:8px;word-break:break-all"></div>
+      <button class="btn sm" id="logoutBtn">Sign out</button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-row">
+        <button class="icon-btn" id="menuBtn" title="Menu">☰</button>
+        <div style="flex:1;min-width:160px">
+          <h2 id="pageTitle">Overview</h2>
+          <div class="page-sub" id="pageSub">Executive summary of your spending</div>
+        </div>
+        <span class="chip" id="filterChip">All time</span>
+        <button class="btn" id="resetBtn" title="Clear all filters">↺ Reset</button>
+        <button class="icon-btn" id="themeBtn" title="Toggle theme">◐</button>
+        <button class="btn primary" id="addBtn">＋ Add expense</button>
+      </div>
+      <div class="filters" id="filters">
+        <div class="f"><label>Range</label><select id="fPreset">
+          <option value="all">All time</option><option value="today">Today</option>
+          <option value="7d">Last 7 days</option><option value="30d">Last 30 days</option>
+          <option value="tm">This month</option><option value="lm">Last month</option>
+          <option value="ty">This year</option><option value="custom">Custom…</option>
+        </select></div>
+        <div class="f"><label>From</label><input id="fFrom" type="date"></div>
+        <div class="f"><label>To</label><input id="fTo" type="date"></div>
+        <div class="f"><label>Year</label><select id="fYear"></select></div>
+        <div class="f"><label>Month</label><select id="fMonth"></select></div>
+        <div class="f"><label>Category</label><select id="fCat"></select></div>
+        <div class="f"><label>Sub-category</label><select id="fSub"></select></div>
+        <div class="f"><label>Payment</label><select id="fPay"></select></div>
+        <div class="f"><label>Day type</label><select id="fDayType">
+          <option value="">All days</option><option value="weekday">Weekdays</option>
+          <option value="weekend">Weekends</option>
+        </select></div>
+        <div class="f"><label>Weekday</label><select id="fWeekday"><option value="">All</option></select></div>
+      </div>
+    </header>
+
+    <!-- ---------- Overview ---------- -->
+    <section class="page active" id="page-overview">
+      <div class="grid kpis" id="kpiGrid"></div>
+      <div class="grid g2" style="margin-top:14px">
+        <div class="card"><h3>Monthly spending trend <span class="hint">click a month to filter</span></h3>
+          <div class="chart-box"><canvas id="cMonthly"></canvas></div></div>
+        <div class="card"><h3>Category distribution <span class="hint">click a slice to drill in</span></h3>
+          <div class="chart-box"><canvas id="cCatDonut"></canvas></div></div>
+      </div>
+      <div class="grid g2" style="margin-top:14px">
+        <div class="card"><h3>Daily spending</h3><div class="chart-box"><canvas id="cDaily"></canvas></div></div>
+        <div class="card"><h3>Top categories</h3><div class="chart-box"><canvas id="cCatBar"></canvas></div></div>
+      </div>
+      <div class="grid g3" style="margin-top:14px">
+        <div class="card"><h3>Payment mix</h3><div class="chart-box sm"><canvas id="cPayDonut"></canvas></div></div>
+        <div class="card"><h3>Insights <span class="hint">live with filters</span></h3><div id="insights"></div></div>
+        <div class="card"><h3>Spending limits</h3><div id="limitsPanel"></div></div>
+      </div>
+      <div class="card" style="margin-top:14px"><h3>Anomaly detection <span class="hint">vs your historical baseline</span></h3>
+        <div id="anomalies" class="scroll"></div></div>
+    </section>
+
+    <!-- ---------- Daily & Weekly ---------- -->
+    <section class="page" id="page-daily">
+      <div class="grid kpis" id="dailyKpis"></div>
+      <div class="card span2" style="margin-top:14px"><h3>Spending intensity <span class="hint">last 12 months</span></h3>
+        <div class="heat" id="heatmap"></div>
+        <div class="heat-legend" id="heatLegend"></div></div>
+      <div class="grid g2" style="margin-top:14px">
+        <div class="card"><h3>Daily trend with 7-day average</h3><div class="chart-box"><canvas id="cDailyTrend"></canvas></div></div>
+        <div class="card"><h3>Weekly totals</h3><div class="chart-box"><canvas id="cWeekly"></canvas></div></div>
+      </div>
+      <div class="grid g2" style="margin-top:14px">
+        <div class="card"><h3>Day of week <span class="hint">total vs average</span></h3><div class="chart-box"><canvas id="cWeekday"></canvas></div></div>
+        <div class="card"><h3>Weekday vs weekend</h3><div class="chart-box"><canvas id="cDayType"></canvas></div></div>
+      </div>
+      <div class="card" style="margin-top:14px"><h3>Top spending days</h3><div class="scroll" id="topDays"></div></div>
+    </section>
+
+    <!-- ---------- Monthly ---------- -->
+    <section class="page" id="page-monthly">
+      <div class="grid kpis" id="monthlyKpis"></div>
+      <div class="card" style="margin-top:14px"><h3>Month-over-month trend <span class="hint">bars = spend, line = % change</span></h3>
+        <div class="chart-box lg"><canvas id="cMoM"></canvas></div></div>
+      <div class="grid g2" style="margin-top:14px">
+        <div class="card"><h3>Transaction volume by month</h3><div class="chart-box"><canvas id="cMonthCount"></canvas></div></div>
+        <div class="card"><h3>Monthly variation explained</h3><div id="monthNarrative"></div></div>
+      </div>
+      <div class="card" style="margin-top:14px"><h3>Month comparison</h3><div class="scroll" id="monthTable"></div></div>
+    </section>
+
+    <!-- ---------- Category ---------- -->
+    <section class="page" id="page-category">
+      <div class="breadcrumb" id="catCrumb"></div>
+      <div class="grid g2">
+        <div class="card"><h3>Category share</h3><div class="chart-box"><canvas id="cCatShare"></canvas></div></div>
+        <div class="card"><h3>Category trend <span class="hint">top 5 over time</span></h3><div class="chart-box"><canvas id="cCatTrend"></canvas></div></div>
+      </div>
+      <div class="grid g2" style="margin-top:14px">
+        <div class="card"><h3>Category ranking <span class="hint">click to drill into sub-categories</span></h3>
+          <div class="scroll" id="catTable"></div></div>
+        <div class="card"><h3 id="subTitle">Sub-category breakdown</h3><div class="scroll" id="subTable"></div></div>
+      </div>
+    </section>
+
+    <!-- ---------- Payment ---------- -->
+    <section class="page" id="page-payment">
+      <div class="grid kpis" id="payKpis"></div>
+      <div class="grid g2" style="margin-top:14px">
+        <div class="card"><h3>Spend by payment method</h3><div class="chart-box"><canvas id="cPayShare"></canvas></div></div>
+        <div class="card"><h3>Transactions &amp; average value</h3><div class="chart-box"><canvas id="cPayBar"></canvas></div></div>
+      </div>
+      <div class="card" style="margin-top:14px"><h3>Payment method detail</h3><div class="scroll" id="payTable"></div></div>
+    </section>
+
+    <!-- ---------- All-Time ---------- -->
+    <section class="page" id="page-alltime">
+      <div class="grid kpis" id="atKpis"></div>
+      <div class="card" style="margin-top:14px"><h3>Cumulative expenditure <span class="hint">since your first entry</span></h3>
+        <div class="chart-box lg"><canvas id="cCumulative"></canvas></div></div>
+      <div class="grid g2" style="margin-top:14px">
+        <div class="card"><h3>Year-on-year comparison</h3><div class="chart-box"><canvas id="cYearly"></canvas></div></div>
+        <div class="card"><h3>All-time records</h3><div id="records"></div></div>
+      </div>
+      <div class="card" style="margin-top:14px"><h3>Full monthly history</h3><div class="chart-box lg"><canvas id="cAllMonths"></canvas></div></div>
+    </section>
+
+    <!-- ---------- Transaction log ---------- -->
+    <section class="page" id="page-log">
+      <div class="card"><h3>Transaction log <span class="hint" id="logCount"></span></h3>
+        <div class="scroll" id="logTable" style="max-height:600px"></div></div>
+      <div class="card" style="margin-top:14px"><h3>Data quality checks <span class="hint">duplicates &amp; missing fields</span></h3>
+        <div class="scroll" id="quality"></div></div>
+    </section>
+
+    <!-- ---------- Settings ---------- -->
+    <section class="page" id="page-settings">
+      <div class="grid g2">
+        <div class="card"><h3>Categories &amp; sub-categories</h3>
+          <p class="page-sub">Master lookups, kept separate from your transaction log.</p>
+          <div class="inline-form">
+            <input id="newCat" placeholder="New category name">
+            <button class="btn primary" id="addCatBtn">Add</button>
+          </div>
+          <div class="inline-form">
+            <select id="subParent"></select>
+            <input id="newSub" placeholder="New sub-category">
+            <button class="btn" id="addSubBtn">Add</button>
+          </div>
+          <div id="catManager" style="margin-top:16px"></div>
+        </div>
+        <div class="card"><h3>Spending limits</h3>
+          <p class="page-sub">Optional. Shown as Within Limit, Approaching or Exceeded.</p>
+          <div class="inline-form">
+            <select id="limKind">
+              <option value="daily">Daily</option><option value="monthly">Monthly</option>
+              <option value="category">Category (per month)</option>
+            </select>
+            <select id="limCat" class="hide"></select>
+            <input id="limAmt" type="number" min="1" step="1" placeholder="Amount ₹">
+            <button class="btn primary" id="addLimBtn">Set</button>
+          </div>
+          <div id="limManager" style="margin-top:16px"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- Guide ---------- -->
+    <section class="page help" id="page-help">
+      <div class="grid g2">
+        <div class="card">
+          <h3>Daily habit</h3>
+          <p>Your only recurring job is entering transactions. Everything else — time attributes,
+             trends, comparisons, anomaly flags — is derived automatically every time the page loads.</p>
+          <ol>
+            <li>Hit <strong>＋ Add expense</strong> (or press <strong>N</strong>).</li>
+            <li>Fill the six fields: Date, Amount, Category, Sub-category, Description, Payment method.</li>
+            <li>That's it. Every page and metric refreshes on save.</li>
+          </ol>
+          <h4>Keyboard shortcuts</h4>
+          <ul><li><strong>N</strong> — new expense</li><li><strong>R</strong> — reset filters</li>
+              <li><strong>T</strong> — toggle theme</li><li><strong>Esc</strong> — close dialog</li></ul>
+        </div>
+        <div class="card">
+          <h3>Filters &amp; drill-downs</h3>
+          <p>The filter bar sits above every page and applies to all of them at once, so switching
+             pages keeps your context. <strong>Reset</strong> clears everything.</p>
+          <h4>Cross-filtering</h4>
+          <ul>
+            <li>Click a slice on any category chart to filter to that category.</li>
+            <li>Click a month bar on the Overview or Monthly page to filter to that month.</li>
+            <li>On the Category page, click a category row to drill into its sub-categories,
+                then a sub-category to see the individual transactions behind it.</li>
+          </ul>
+          <h4>Anomalies &amp; limits</h4>
+          <p>Anomalies use a median/MAD outlier score against your whole history, so a single
+             large purchase can't hide itself by inflating its own baseline. Limits are optional
+             and never block an entry — they only report status.</p>
+          <h4>Refresh</h4>
+          <p>Data reloads on every save and filter change. Reload the page for a manual refresh.</p>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div id="modalRoot"></div>
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

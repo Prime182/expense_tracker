@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: expense-tracker
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: DATABASE_URL      # Supabase pooler connection string
+        sync: false
+      - key: INVITE_CODE       # required to create an account
+        sync: false
+      - key: SECRET_KEY        # signs the session cookie
+        generateValue: true
