@@ -61,8 +61,11 @@ def signup(body: Credentials):
     created = supa.sign_up(body.email.lower().strip(), body.password)
 
     # With email confirmation switched on, signup returns a user but no session.
+    # That is a success, not an error -- report it as one so the UI can say so plainly.
     if not created.get("access_token"):
-        raise HTTPException(400, "Account created. Check your email to confirm it, then sign in.")
+        return {"pending": True,
+                "message": "Account created. Check your email for the confirmation link, "
+                           "then come back and sign in."}
 
     session = _session_response(created)
     supa.seed_user(session["access_token"], created["user"]["id"])

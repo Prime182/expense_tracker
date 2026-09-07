@@ -769,6 +769,14 @@ function resetFilters(){
 
 /* ---------------------------------------------------------------- auth ui */
 let signupMode = false;
+
+function showMsg(text, kind){
+  const m = $('#authMsg');
+  m.textContent = text;
+  m.classList.toggle('ok', kind === 'ok');
+  m.classList.remove('hide');
+}
+
 function setAuthMode(signup){
   signupMode = signup;
   $('#authTitle').textContent = signup ? 'Create your account' : 'Welcome back';
@@ -845,11 +853,21 @@ async function startApp(email){
     try {
       const body = {email:$('#email').value, password:$('#password').value, invite_code:$('#invite').value};
       const r = await api(signupMode ? '/api/signup' : '/api/login', 'POST', body);
+      if (r.pending){                       // account made, awaiting email confirmation
+        setAuthMode(false);
+        showMsg(r.message, 'ok');
+        return;
+      }
       TOKENS.set(r);
       await startApp(r.email);
     } catch(err){
-      msg.textContent = err.message; msg.classList.remove('hide');
-    } finally { btn.disabled = false; setAuthMode(signupMode); }
+      showMsg(err.message, 'error');
+    } finally {
+      // Do NOT call setAuthMode here: it clears #authMsg and would erase the
+      // message we just displayed. Only restore the button.
+      btn.disabled = false;
+      btn.textContent = signupMode ? 'Create account' : 'Sign in';
+    }
   };
 
   const cfg = await api('/api/config');

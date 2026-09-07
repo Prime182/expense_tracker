@@ -68,6 +68,12 @@ def _raise(resp: httpx.Response, fallback: str):
 
 def sign_up(email: str, password: str) -> dict:
     r = http.post(f"{AUTH}/signup", json={"email": email, "password": password})
+    if r.status_code == 429:
+        # Supabase's built-in mailer is capped at a few messages an hour, so with
+        # "Confirm email" on, signups fail here and no account is created at all.
+        raise HTTPException(429, "Sign-ups are temporarily blocked by the email provider's "
+                                 "rate limit. Turn off 'Confirm email' in the Supabase "
+                                 "Authentication settings, or try again in an hour.")
     if r.status_code >= 400:
         _raise(r, "Could not create that account")
     return r.json()

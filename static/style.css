@@ -56,8 +56,9 @@ input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--a
 .btn.wide{width:100%;justify-content:center;padding:11px}
 .btn.sm{padding:5px 10px;font-size:12px;border-radius:8px}
 .btn.danger:hover{border-color:var(--neg);color:var(--neg)}
-.msg{margin-top:14px;padding:10px 12px;border-radius:9px;font-size:13px;
+.msg{margin-top:14px;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.5;
   background:color-mix(in srgb,var(--neg) 12%,transparent);color:var(--neg)}
+.msg.ok{background:color-mix(in srgb,var(--pos) 14%,transparent);color:var(--pos)}
 .switch-line{margin-top:20px;text-align:center;color:var(--muted);font-size:13px}
 .switch-line button{background:none;border:none;color:var(--accent);font-weight:600;padding:0}
 
