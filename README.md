@@ -1,6 +1,8 @@
-# Expense Tracker
+# OXY FIN+
 
-Multi-user personal expense tracking with automated analytics, anomaly detection and
+_by THE OXY_
+
+OXY FIN+ is multi-user personal expense tracking with automated analytics, anomaly detection and
 six reporting pages. FastAPI + Supabase + vanilla JS/Chart.js. No build step.
 
 Accounts are Supabase Auth. Data lives in Supabase Postgres behind Row Level Security

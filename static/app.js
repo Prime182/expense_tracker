@@ -1,7 +1,13 @@
-/* Expense Tracker - single page client */
+/* OXY FIN+ by THE OXY - single page client */
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
-const PALETTE = ['#6366f1','#22d3ee','#f59e0b','#ec4899','#10b981','#8b5cf6','#ef4444','#14b8a6','#f97316','#3b82f6'];
+// Brand teal leads, then hues alternate warm/cool so neighbouring slices stay
+// distinguishable -- three teals in a row read as one blob on a donut.
+// Two sets: the deep wordmark teal sings on white and disappears on navy, so the
+// dark theme uses lifted variants of the same hues. setTheme() swaps them.
+const PALETTE_LIGHT = ['#066c7e','#c77d29','#3c9ca2','#7a5ea8','#0f8a6a','#d1495b','#1ec0e4','#e08b4c','#2a7a94','#5fd8f0'];
+const PALETTE_DARK  = ['#3fb5cc','#e8a54a','#6fcdd4','#a68ad4','#34c99b','#ff8a99','#7ee0f5','#f0a76a','#5fa8c4','#a8e8f5'];
+let PALETTE = PALETTE_LIGHT;
 const DOW = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -70,7 +76,8 @@ function toast(msg){
 /* ---------------------------------------------------------------- theme */
 function setTheme(name){
   document.documentElement.dataset.theme = name;
-  localStorage.setItem('theme', name);
+  PALETTE = name === 'dark' ? PALETTE_DARK : PALETTE_LIGHT;
+  try { localStorage.setItem('theme', name); } catch {}
   if (S.data) renderAll();
 }
 const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();

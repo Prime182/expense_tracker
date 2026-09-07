@@ -1,22 +1,31 @@
 /* ---- theme tokens: Light Premium / Dark Finance ---- */
+/* THE OXY brand palette, sampled from the wordmark sheet and app icon. */
 :root{
-  --bg:#f5f6fa; --bg2:#eceef6; --surface:#ffffff; --surface2:#fafbfe;
-  --text:#0f172a; --muted:#64748b; --border:#e4e7f0; --border2:#eef0f7;
-  --accent:#4f46e5; --accent2:#7c3aed; --accent-soft:#eef2ff;
-  --pos:#059669; --neg:#dc2626; --warn:#d97706;
-  --shadow:0 1px 2px rgba(16,24,40,.05), 0 8px 24px -12px rgba(16,24,40,.14);
-  --shadow-lg:0 12px 40px -12px rgba(16,24,40,.22);
-  --grid:rgba(15,23,42,.07);
+  --oxy-deep:#062a36;   /* navy      */
+  --oxy-teal:#066c7e;   /* wordmark  */
+  --oxy-aqua:#3c9ca2;   /* app icon  */
+  --oxy-cyan:#1ec0e4;   /* highlight */
+  --oxy-cream:#f7f2ec;  /* icon glyph*/
+  --oxy-paper:#fbfaf7;
+  --oxy-mist:#eff7f9;
+
+  --bg:#f4f8f9; --bg2:#e6f0f2; --surface:#ffffff; --surface2:var(--oxy-paper);
+  --text:#062a36; --muted:#5b7b85; --border:#dde9ec; --border2:#eaf2f4;
+  --accent:var(--oxy-teal); --accent2:var(--oxy-aqua); --accent-soft:var(--oxy-mist);
+  --pos:#0f8a6a; --neg:#d1495b; --warn:#c77d29;
+  --shadow:0 1px 2px rgba(6,42,54,.05), 0 8px 24px -12px rgba(6,42,54,.16);
+  --shadow-lg:0 12px 40px -12px rgba(6,42,54,.26);
+  --grid:rgba(6,42,54,.08);
   --radius:14px;
 }
 [data-theme="dark"]{
-  --bg:#080b12; --bg2:#0d1119; --surface:#111725; --surface2:#151c2c;
-  --text:#e9eefb; --muted:#8896ad; --border:#1e2739; --border2:#1a2233;
-  --accent:#6366f1; --accent2:#22d3ee; --accent-soft:#1a2038;
-  --pos:#10b981; --neg:#fb7185; --warn:#fbbf24;
-  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.7);
-  --shadow-lg:0 16px 48px -16px rgba(0,0,0,.8);
-  --grid:rgba(233,238,251,.07);
+  --bg:#041c24; --bg2:#062a36; --surface:#083240; --surface2:#0a3b4a;
+  --text:#e8f4f7; --muted:#7fa3ad; --border:#0f4757; --border2:#0c3d4c;
+  --accent:var(--oxy-cyan); --accent2:#5fd8f0; --accent-soft:#0d4354;
+  --pos:#2dd4a7; --neg:#ff7a8a; --warn:#f5b942;
+  --shadow:0 1px 2px rgba(0,0,0,.45), 0 8px 24px -12px rgba(0,0,0,.75);
+  --shadow-lg:0 16px 48px -16px rgba(0,0,0,.85);
+  --grid:rgba(232,244,247,.08);
 }
 *{box-sizing:border-box}
 html,body{height:100%}
@@ -38,11 +47,18 @@ a{color:var(--accent);text-decoration:none}
   background:radial-gradient(1000px 600px at 15% -10%,var(--accent-soft),transparent 60%),var(--bg)}
 .auth-card{width:100%;max-width:400px;background:var(--surface);border:1px solid var(--border);
   border-radius:20px;padding:32px;box-shadow:var(--shadow-lg)}
-.auth-card h1{font-size:24px;margin-bottom:6px}
+.auth-card .wordmark{font-size:23px;margin-bottom:8px}
+.auth-card h1{font-size:19px;margin-bottom:6px}
 .auth-card p.sub{color:var(--muted);margin:0 0 24px}
-.brand-dot{width:38px;height:38px;border-radius:11px;margin-bottom:18px;
-  background:linear-gradient(135deg,var(--accent),var(--accent2));
-  display:grid;place-items:center;color:#fff;font-weight:700;font-size:18px}
+.mark{width:40px;height:40px;border-radius:11px;display:block;flex:none}
+.auth-card .mark{margin-bottom:18px}
+/* Wordmark: monoline geometric with wide tracking, per THE OXY brand sheet. */
+.wordmark{font-family:"Poppins","Inter",system-ui,sans-serif;font-weight:600;
+  letter-spacing:.14em;color:var(--accent);line-height:1;white-space:nowrap}
+.wordmark .plus{color:var(--oxy-aqua)}
+[data-theme="dark"] .wordmark .plus{color:var(--accent2)}
+.brand-parent{font-family:"Poppins","Inter",system-ui,sans-serif;font-size:10px;
+  letter-spacing:.28em;color:var(--muted);text-transform:uppercase;font-weight:500}
 label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin:14px 0 6px;
   text-transform:uppercase;letter-spacing:.05em}
 input,select{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;
@@ -66,8 +82,9 @@ input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--a
 .shell{display:grid;grid-template-columns:236px 1fr;min-height:100dvh}
 .side{background:var(--surface);border-right:1px solid var(--border);padding:18px 14px;
   display:flex;flex-direction:column;gap:4px;position:sticky;top:0;height:100dvh;overflow-y:auto}
-.side .logo{display:flex;align-items:center;gap:10px;padding:6px 8px 18px;font-weight:700;font-size:16px}
-.side .logo .brand-dot{margin:0;width:30px;height:30px;border-radius:9px;font-size:15px}
+.side .logo{display:flex;align-items:center;gap:10px;padding:6px 8px 18px}
+.side .logo .mark{width:32px;height:32px;border-radius:9px}
+.side .logo .wordmark{font-size:15px}
 .nav-label{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);
   padding:14px 10px 6px;font-weight:700}
 .nav{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;
