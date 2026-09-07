@@ -16,13 +16,13 @@
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="oxy-mark" viewBox="0 0 64 64">
     <rect width="64" height="64" rx="13" fill="#0b0f10"/>
-    <g fill="none" stroke="#1ec0e4" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
+    <g fill="none" stroke="var(--oxy-cyan)" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
       <ellipse cx="32" cy="23" rx="16.5" ry="8.4"/>
       <path d="M15.5 23v19c0 4.6 7.4 8.4 16.5 8.4S48.5 46.6 48.5 42V23"/>
       <path d="M15.5 32.5c0 4.6 7.4 8.4 16.5 8.4s16.5-3.8 16.5-8.4"/>
     </g>
     <text x="32" y="27.5" text-anchor="middle" font-size="13" font-weight="700"
-          fill="#1ec0e4" font-family="Georgia,'Times New Roman',serif">&#8377;</text>
+          fill="var(--oxy-cyan)" font-family="Georgia,'Times New Roman',serif">&#8377;</text>
   </symbol>
 </svg>
 
@@ -225,6 +225,14 @@
             <button class="btn" id="addSubBtn">Add</button>
           </div>
           <div id="catManager" style="margin-top:16px"></div>
+        </div>
+        <div class="card"><h3>Appearance <span class="hint">saved to your account</span></h3>
+          <p class="page-sub">Pick a colour. It restyles the whole product, branding included.</p>
+          <div class="mode-pick" id="modePick">
+            <button class="btn sm" data-mode="light">Light</button>
+            <button class="btn sm" data-mode="dark">Dark</button>
+          </div>
+          <div class="swatches" id="appearance"></div>
         </div>
         <div class="card"><h3>Spending limits</h3>
           <p class="page-sub">Optional. Shown as Within Limit, Approaching or Exceeded.</p>

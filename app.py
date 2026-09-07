@@ -47,10 +47,12 @@ class Credentials(BaseModel):
 
 
 def _session_response(auth: dict) -> dict:
+    user = auth.get("user") or {}
     return {
         "access_token": auth["access_token"],
         "refresh_token": auth.get("refresh_token", ""),
-        "email": (auth.get("user") or {}).get("email", ""),
+        "email": user.get("email", ""),
+        "prefs": user.get("user_metadata") or {},
     }
 
 
@@ -95,6 +97,22 @@ def refresh(body: RefreshIn):
 def logout(me: Session = ME):
     supa.sign_out(me.token)
     return {"ok": True}
+
+
+class Prefs(BaseModel):
+    mode: str = Field(default="light", pattern="^(light|dark)$")
+    preset: str = Field(default="oxy", max_length=32, pattern="^[a-z0-9_-]+$")
+
+
+@app.put("/api/preferences")
+def save_preferences(body: Prefs, me: Session = ME):
+    """Appearance lives in Supabase Auth user_metadata -- no table, no migration."""
+    return supa.update_user(me.token, body.model_dump())
+
+
+@app.get("/api/me")
+def me_prefs(me: Session = ME):
+    return {"prefs": supa.verify(me.token).get("user_metadata") or {}}
 
 
 @app.get("/api/config")

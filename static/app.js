@@ -5,9 +5,37 @@ const $$ = s => [...document.querySelectorAll(s)];
 // distinguishable -- three teals in a row read as one blob on a donut.
 // Two sets: the deep wordmark teal sings on white and disappears on navy, so the
 // dark theme uses lifted variants of the same hues. setTheme() swaps them.
-const PALETTE_LIGHT = ['#0b8fa8','#c77d29','#0b0f10','#7a5ea8','#0f8a6a','#d1495b','#1ec0e4','#e08b4c','#5b696d','#8ad9ea'];
-const PALETTE_DARK  = ['#1ec0e4','#e8a54a','#8ad9ea','#a68ad4','#34c99b','#ff8a99','#5fd8f0','#f0a76a','#9aa6a9','#c9eef7'];
-let PALETTE = PALETTE_LIGHT;
+// Well-separated base series colours; the active accent is prepended and any
+// base hue too close to it is dropped, so no two neighbouring slices collide.
+const BASE_LIGHT = ['#c77d29','#0b0f10','#7a5ea8','#0f8a6a','#d1495b','#2f7fd4','#e08b4c','#5b696d'];
+const BASE_DARK  = ['#e8a54a','#9aa6a9','#a68ad4','#34c99b','#ff8a99','#6aa9f0','#f0a76a','#c9eef7'];
+
+/* Appearance presets. Each supplies an accent that passes contrast on white,
+   a bright variant for fills, a soft tint, and the colours of the app mark --
+   so picking a theme restyles the branding too, exactly as intended. */
+const THEMES = [
+  {id:'oxy',     name:'Oxy Cyan',   light:['#0b8fa8','#1ec0e4','#e6f8fc'], dark:['#1ec0e4','#5fd8f0','#07333d'], mark:'#1ec0e4'},
+  {id:'teal',    name:'Deep Teal',  light:['#066c7e','#3c9ca2','#eaf5f7'], dark:['#3fb5cc','#6fcdd4','#06303a'], mark:'#3c9ca2'},
+  {id:'indigo',  name:'Indigo',     light:['#4f46e5','#7c3aed','#eef2ff'], dark:['#818cf8','#a78bfa','#1e1b4b'], mark:'#818cf8'},
+  {id:'emerald', name:'Emerald',    light:['#047857','#10b981','#ecfdf5'], dark:['#34d399','#6ee7b7','#04302a'], mark:'#34d399'},
+  {id:'amber',   name:'Amber',      light:['#b45309','#f59e0b','#fff7e6'], dark:['#fbbf24','#fcd34d','#2f2003'], mark:'#fbbf24'},
+  {id:'rose',    name:'Rose',       light:['#be123c','#f43f5e','#fff1f3'], dark:['#fb7185','#fda4af','#3b0a1a'], mark:'#fb7185'},
+];
+const themeById = id => THEMES.find(t => t.id === id) || THEMES[0];
+
+function hueOf(hex){
+  const [r,g,b] = [1,3,5].map(i => parseInt(hex.slice(i,i+2),16)/255);
+  const mx = Math.max(r,g,b), mn = Math.min(r,g,b), d = mx-mn;
+  if (!d) return -999;                                  // greys never collide
+  const h = mx===r ? ((g-b)/d+6)%6 : mx===g ? (b-r)/d+2 : (r-g)/d+4;
+  return h*60;
+}
+const hueGap = (a,b) => { const d = Math.abs(hueOf(a)-hueOf(b)); return Math.min(d, 360-d); };
+
+let PALETTE = [];
+function buildPalette(accent, base){
+  PALETTE = [accent, ...base.filter(c => hueOf(c) < -900 || hueGap(c, accent) > 28)];
+}
 const DOW = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -23,6 +51,7 @@ const today = () => new Date().toISOString().slice(0,10);
 const S = {
   user:null, boot:null, data:null, page:'overview',
   filters:{preset:'all', from:'', to:'', years:[], months:[], categories:[], subcategories:[], payments:[], weekdays:[], daytype:''},
+  prefs:{mode:'light', preset:'oxy'},
   drill:{category:null, subcategory:null},
 };
 
@@ -74,11 +103,41 @@ function toast(msg){
 }
 
 /* ---------------------------------------------------------------- theme */
-function setTheme(name){
-  document.documentElement.dataset.theme = name;
-  PALETTE = name === 'dark' ? PALETTE_DARK : PALETTE_LIGHT;
-  try { localStorage.setItem('theme', name); } catch {}
+function markSvg(fg){
+  return "data:image/svg+xml," + encodeURIComponent(
+    `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'>` +
+    `<rect width='64' height='64' rx='13' fill='#0b0f10'/>` +
+    `<g fill='none' stroke='${fg}' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'>` +
+    `<ellipse cx='32' cy='23' rx='16.5' ry='8.4'/>` +
+    `<path d='M15.5 23v19c0 4.6 7.4 8.4 16.5 8.4S48.5 46.6 48.5 42V23'/>` +
+    `<path d='M15.5 32.5c0 4.6 7.4 8.4 16.5 8.4s16.5-3.8 16.5-8.4'/></g>` +
+    `<text x='32' y='27.5' text-anchor='middle' font-size='13' font-weight='700' fill='${fg}'` +
+    ` font-family='Georgia,serif'>\u20B9</text></svg>`);
+}
+
+/** Applies mode (light/dark) and colour preset together, then persists both. */
+function setTheme(mode, presetId, save = true){
+  const t = themeById(presetId ?? S.prefs.preset);
+  mode = mode ?? S.prefs.mode;
+  S.prefs = {mode, preset: t.id};
+
+  const root = document.documentElement;
+  root.dataset.theme = mode;
+  const [accent, accent2, soft] = mode === 'dark' ? t.dark : t.light;
+  root.style.setProperty('--accent', accent);
+  root.style.setProperty('--accent2', accent2);
+  root.style.setProperty('--accent-soft', soft);
+  root.style.setProperty('--oxy-cyan', t.mark);          // mark, bars, KPI rule
+  root.style.setProperty('--btn-bg', mode === 'dark' ? accent2 : 'var(--oxy-ink)');
+  root.style.setProperty('--btn-fg', mode === 'dark' ? '#08131a' : '#ffffff');
+
+  buildPalette(accent2, mode === 'dark' ? BASE_DARK : BASE_LIGHT);
+  document.querySelector('link[rel=icon]').href = markSvg(t.mark);
+
+  try { localStorage.setItem('prefs', JSON.stringify(S.prefs)); } catch {}
+  if (save && S.user) api('/api/preferences', 'PUT', S.prefs).catch(() => {});
   if (S.data) renderAll();
+  renderAppearance();
 }
 const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 
@@ -240,7 +299,7 @@ const maxOf = rows => Math.max(0, ...rows.map(r => r.amount));
 function renderAll(){
   const d = S.data;
   renderOverview(d); renderDaily(d); renderMonthly(d);
-  renderCategory(d); renderPayment(d); renderAllTime(d); renderLog(d); renderSettings();
+  renderCategory(d); renderPayment(d); renderAllTime(d); renderLog(d); renderSettings(); renderAppearance();
 }
 
 /* ---- Overview ---- */
@@ -682,6 +741,24 @@ function renderSettings(){
   });
 }
 
+function renderAppearance(){
+  const box = $('#appearance');
+  if (!box) return;
+  box.innerHTML = THEMES.map(t => {
+    const [ , bright ] = S.prefs.mode === 'dark' ? t.dark : t.light;
+    return `<button class="swatch ${t.id === S.prefs.preset ? 'on' : ''}" data-preset="${t.id}"
+      title="${esc(t.name)}"><span class="chip-dot" style="background:${bright}"></span>
+      <span>${esc(t.name)}</span></button>`;
+  }).join('');
+  box.querySelectorAll('[data-preset]').forEach(b =>
+    b.onclick = () => { setTheme(null, b.dataset.preset); toast(`${themeById(b.dataset.preset).name} applied`); });
+  const modeBox = $('#modePick');
+  if (modeBox) modeBox.querySelectorAll('[data-mode]').forEach(b => {
+    b.classList.toggle('on', b.dataset.mode === S.prefs.mode);
+    b.onclick = () => setTheme(b.dataset.mode, null);
+  });
+}
+
 /* ---------------------------------------------------------------- modal */
 function closeModal(){ $('#modalRoot').innerHTML = ''; }
 
@@ -796,8 +873,9 @@ function setAuthMode(signup){
   $('#authMsg').classList.add('hide');
 }
 
-async function startApp(email){
+async function startApp(email, prefs){
   S.user = email;
+  if (prefs && prefs.preset) setTheme(prefs.mode || S.prefs.mode, prefs.preset, false);
   $('#authView').classList.add('hide');
   $('#appView').classList.remove('hide');
   $('#userEmail').textContent = email;
@@ -808,11 +886,14 @@ async function startApp(email){
 
 /* ---------------------------------------------------------------- init */
 (async function init(){
-  setTheme(localStorage.getItem('theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+  let savedPrefs = null;
+  try { savedPrefs = JSON.parse(localStorage.getItem('prefs') || 'null'); } catch {}
+  const sysDark = matchMedia('(prefers-color-scheme: dark)').matches;
+  setTheme(savedPrefs?.mode || (sysDark ? 'dark' : 'light'), savedPrefs?.preset || 'oxy', false);
 
   $$('.nav').forEach(b => b.onclick = () => goto(b.dataset.page));
   $('#menuBtn').onclick = () => $('#side').classList.toggle('open');
-  $('#themeBtn').onclick = () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+  $('#themeBtn').onclick = () => setTheme(S.prefs.mode === 'dark' ? 'light' : 'dark', null);
   $('#resetBtn').onclick = resetFilters;
   $('#addBtn').onclick = () => openExpenseModal();
   $('#logoutBtn').onclick = async () => {
@@ -866,7 +947,7 @@ async function startApp(email){
         return;
       }
       TOKENS.set(r);
-      await startApp(r.email);
+      await startApp(r.email, r.prefs);
     } catch(err){
       showMsg(err.message, 'error');
     } finally {
@@ -881,7 +962,7 @@ async function startApp(email){
   S.inviteRequired = cfg.invite_required;
   const stored = TOKENS.get();
   if (stored?.access_token){
-    try { await startApp(stored.email || ''); return; }
+    try { await startApp(stored.email || '', stored.prefs); return; }
     catch { TOKENS.clear(); }
   }
   $('#authView').classList.remove('hide');

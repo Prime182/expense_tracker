@@ -93,6 +93,19 @@ def refresh(refresh_token: str) -> dict:
     return r.json()
 
 
+def update_user(token: str, metadata: dict) -> dict:
+    """Store per-user preferences in Supabase Auth's user_metadata bag.
+
+    Keeps appearance settings out of the schema entirely: the values ride back
+    in the access token's claims, so reading them costs no extra request.
+    """
+    r = http.put(f"{AUTH}/user", json={"data": metadata},
+                 headers={"Authorization": f"Bearer {token}", "apikey": PUBLISHABLE_KEY})
+    if r.status_code >= 400:
+        _raise(r, "Could not save your preferences")
+    return (r.json() or {}).get("user_metadata", {})
+
+
 def sign_out(token: str):
     http.post(f"{AUTH}/logout", headers={"Authorization": f"Bearer {token}"})
 
