@@ -21,18 +21,44 @@ const S = {
 };
 
 /* ---------------------------------------------------------------- plumbing */
-async function api(path, method='GET', body){
-  const r = await fetch(path, {
-    method, headers: body ? {'Content-Type':'application/json'} : {},
-    body: body ? JSON.stringify(body) : undefined,
-  });
+/* Supabase issues the tokens; we keep them per-browser and send the access token
+   as a Bearer header. Row Level Security on the database does the real enforcing. */
+const TOKENS = {
+  get(){ try { return JSON.parse(localStorage.getItem('auth') || 'null'); } catch { return null; } },
+  set(t){ try { localStorage.setItem('auth', JSON.stringify(t)); } catch {} },
+  clear(){ try { localStorage.removeItem('auth'); } catch {} },
+};
+
+async function request(path, method, body, token){
+  const headers = {};
+  if (body) headers['Content-Type'] = 'application/json';
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const r = await fetch(path, {method, headers, body: body ? JSON.stringify(body) : undefined});
   const text = await r.text();
-  const data = text ? JSON.parse(text) : {};
-  if (!r.ok){
-    const d = data.detail;
-    throw new Error(Array.isArray(d) ? d.map(e => e.msg).join('; ') : (d || 'Something went wrong'));
+  return {ok: r.ok, status: r.status, data: text ? JSON.parse(text) : {}};
+}
+
+function apiError(data){
+  const d = data.detail;
+  return new Error(Array.isArray(d) ? d.map(e => e.msg).join('; ') : (d || 'Something went wrong'));
+}
+
+async function api(path, method='GET', body){
+  const auth = TOKENS.get();
+  let r = await request(path, method, body, auth?.access_token);
+  // Supabase access tokens are short-lived; swap in a fresh one and retry once.
+  if (r.status === 401 && auth?.refresh_token){
+    const rf = await request('/api/refresh', 'POST', {refresh_token: auth.refresh_token});
+    if (rf.ok){
+      TOKENS.set(rf.data);
+      r = await request(path, method, body, rf.data.access_token);
+    } else {
+      TOKENS.clear();
+      if (S.user) return location.reload();
+    }
   }
-  return data;
+  if (!r.ok) throw apiError(r.data);
+  return r.data;
 }
 
 let toastTimer;
@@ -774,7 +800,9 @@ async function startApp(email){
   $('#themeBtn').onclick = () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
   $('#resetBtn').onclick = resetFilters;
   $('#addBtn').onclick = () => openExpenseModal();
-  $('#logoutBtn').onclick = async () => { await api('/api/logout','POST'); location.reload(); };
+  $('#logoutBtn').onclick = async () => {
+    try { await api('/api/logout','POST'); } finally { TOKENS.clear(); location.reload(); }
+  };
   $('#filters').addEventListener('change', ev => {
     if (ev.target.id === 'fPreset' && ev.target.value === 'custom') return;
     if (ev.target.id === 'fFrom' || ev.target.id === 'fTo') $('#fPreset').value = 'custom';
@@ -817,14 +845,21 @@ async function startApp(email){
     try {
       const body = {email:$('#email').value, password:$('#password').value, invite_code:$('#invite').value};
       const r = await api(signupMode ? '/api/signup' : '/api/login', 'POST', body);
+      TOKENS.set(r);
       await startApp(r.email);
     } catch(err){
       msg.textContent = err.message; msg.classList.remove('hide');
     } finally { btn.disabled = false; setAuthMode(signupMode); }
   };
 
-  const me = await api('/api/me');
-  S.inviteRequired = me.invite_required;
-  if (me.user) await startApp(me.user);
-  else { $('#authView').classList.remove('hide'); setAuthMode(false); }
+  const cfg = await api('/api/config');
+  S.inviteRequired = cfg.invite_required;
+  const stored = TOKENS.get();
+  if (stored?.access_token){
+    try { await startApp(stored.email || ''); return; }
+    catch { TOKENS.clear(); }
+  }
+  $('#authView').classList.remove('hide');
+  $('#appView').classList.add('hide');
+  setAuthMode(false);
 })();

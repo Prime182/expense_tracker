@@ -1,7 +1,11 @@
 # Expense Tracker
 
 Multi-user personal expense tracking with automated analytics, anomaly detection and
-six reporting pages. FastAPI + Postgres (Supabase) + vanilla JS/Chart.js. No build step.
+six reporting pages. FastAPI + Supabase + vanilla JS/Chart.js. No build step.
+
+Accounts are Supabase Auth. Data lives in Supabase Postgres behind Row Level Security
+and is read with the signed-in user's own token, so the database — not application
+code — is what enforces that one person only ever sees their own expenses.
 
 ## How it works
 
@@ -15,23 +19,27 @@ years accumulate.
 
 | File | Purpose |
 |---|---|
-| `app.py` | HTTP API, auth, validation, static hosting |
-| `db.py` | Connection pool, schema, per-user seed data |
+| `app.py` | HTTP API, validation, static hosting |
+| `supa.py` | Supabase auth, PostgREST data access, JWT verification |
+| `schema.sql` | Tables and RLS policies — run once in the Supabase SQL Editor |
 | `analytics.py` | All aggregation. Pure functions over row dicts, no DB or framework |
 | `static/` | Single-page client (`index.html`, `app.js`, `style.css`) |
 | `test_analytics.py` | Self-check for the aggregation logic |
 
 ## Run locally
 
+First, create the tables: open the Supabase dashboard → SQL Editor → New query, paste
+`schema.sql`, and Run. This is required once per project and is safe to repeat.
+
+Then copy `.env.example` to `.env`, fill in the values from Supabase → Project Settings →
+API, and start the app:
+
 ```bash
 python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
-export DATABASE_URL="postgresql://user:pass@host:5432/dbname"
-export INVITE_CODE="something-secret"     # required to create an account
-export SECRET_KEY="$(python3 -c 'import secrets;print(secrets.token_hex(32))')"
 ./venv/bin/uvicorn app:app --port 8000
 ```
 
-Then open http://localhost:8000. Schema is created automatically on startup.
+Then open http://localhost:8000.
 
 ```bash
 python3 test_analytics.py    # aggregation self-check
@@ -41,20 +49,23 @@ python3 test_analytics.py    # aggregation self-check
 
 | Variable | Required | Notes |
 |---|---|---|
-| `DATABASE_URL` | yes | Postgres URL. Use Supabase's **pooler** host — the direct host is IPv6-only and Render dials IPv4. |
-| `INVITE_CODE` | yes | Signup is refused without a match. Leave unset only if you want open signup. |
-| `SECRET_KEY` | yes | Signs the session cookie. Changing it signs everyone out. |
-| `RENDER` | auto | Set by Render; switches the session cookie to HTTPS-only. |
+| `SUPABASE_URL` | yes | Project URL, e.g. `https://<ref>.supabase.co` |
+| `SUPABASE_PUBLISHABLE_KEY` | yes | Public key. Safe to expose; RLS is what protects the data. |
+| `SUPABASE_SECRET_KEY` | yes | Service key. Server-side only — it bypasses RLS. |
+| `SUPABASE_JWKS_URL` | no | Defaults to `<SUPABASE_URL>/auth/v1/.well-known/jwks.json` |
+| `INVITE_CODE` | no | Signup is refused unless it matches. **Unset means signup is open to anyone with the URL.** |
 
 ## Deploying
 
-`render.yaml` defines the service. `DATABASE_URL` and `INVITE_CODE` are marked `sync: false`,
-so set them in the Render dashboard rather than committing them.
+`render.yaml` defines the service. Every secret is marked `sync: false`, so set the values
+in the Render dashboard rather than committing them. Run `schema.sql` against the Supabase
+project before the first deploy.
 
 ## Notes
 
-- Passwords are hashed with scrypt (n=2^14). Sessions are signed cookies, 30-day expiry.
-- Every query is scoped by `user_id`; ownership is re-checked on write.
+- Passwords are never seen by this app; Supabase Auth handles them. Access tokens are
+  verified against the project JWKS on every request and refreshed transparently.
+- Isolation is enforced by RLS policies in Postgres, not by application code.
 - Anomaly detection uses a median/MAD modified z-score scoped per category, so an expensive
   category doesn't flood the panel and a lone outlier can't inflate its own baseline.
 - `analytics.py` aggregates a user's full history in Python per request. Comfortable to

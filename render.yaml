@@ -10,9 +10,13 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: "3.12.7"
-      - key: DATABASE_URL      # Supabase pooler connection string
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: SUPABASE_JWKS_URL
         sync: false
       - key: INVITE_CODE       # required to create an account
         sync: false
-      - key: SECRET_KEY        # signs the session cookie
-        generateValue: true

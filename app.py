@@ -1,58 +1,43 @@
-"""Expense tracker API + static host."""
-import hashlib
+"""Expense tracker API + static host.
+
+Accounts and storage are Supabase. The browser holds a Supabase access token and
+sends it as a Bearer header; every data call is made with that same token, so Row
+Level Security in Postgres is what actually enforces one-user-one-dataset.
+"""
 import hmac
 import os
-import secrets
 from datetime import date
 from typing import Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from starlette.middleware.sessions import SessionMiddleware
 
 import analytics
-import db
+import supa
 
 INVITE_CODE = os.environ.get("INVITE_CODE", "")
-SECRET_KEY = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
-SECURE_COOKIE = os.environ.get("RENDER", "") != ""
 
 app = FastAPI(title="Expense Tracker", docs_url=None, redoc_url=None)
-app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, https_only=SECURE_COOKIE,
-                   same_site="lax", max_age=60 * 60 * 24 * 30)
-
-
-@app.on_event("startup")
-def _startup():
-    db.init()
 
 
 # ---------------------------------------------------------------- auth
 
-def hash_pw(pw: str) -> str:
-    salt = secrets.token_bytes(16)
-    return salt.hex() + ":" + hashlib.scrypt(pw.encode(), salt=salt, n=2**14, r=8, p=1).hex()
+class Session:
+    def __init__(self, token: str, user_id: str):
+        self.token = token
+        self.user_id = user_id
 
 
-def verify_pw(pw: str, stored: str) -> bool:
-    try:
-        salt, digest = stored.split(":", 1)
-        calc = hashlib.scrypt(pw.encode(), salt=bytes.fromhex(salt), n=2**14, r=8, p=1).hex()
-    except (ValueError, TypeError):
-        return False
-    return hmac.compare_digest(calc, digest)
-
-
-def current_user(request: Request) -> int:
-    uid = request.session.get("uid")
-    if not uid:
+def current(authorization: str = Header(default="")) -> Session:
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token:
         raise HTTPException(401, "Not signed in")
-    return uid
+    return Session(token, supa.verify(token)["sub"])
 
 
-UID = Depends(current_user)
+ME = Depends(current)
 
 
 class Credentials(BaseModel):
@@ -61,85 +46,85 @@ class Credentials(BaseModel):
     invite_code: str = ""
 
 
+def _session_response(auth: dict) -> dict:
+    return {
+        "access_token": auth["access_token"],
+        "refresh_token": auth.get("refresh_token", ""),
+        "email": (auth.get("user") or {}).get("email", ""),
+    }
+
+
 @app.post("/api/signup")
-def signup(body: Credentials, request: Request):
+def signup(body: Credentials):
     if INVITE_CODE and not hmac.compare_digest(body.invite_code.strip(), INVITE_CODE):
         raise HTTPException(403, "Invalid invite code")
-    email = body.email.lower().strip()
-    with db.pool.connection() as conn:
-        if conn.execute("SELECT 1 FROM users WHERE email=%s", (email,)).fetchone():
-            raise HTTPException(409, "An account with that email already exists")
-        uid = conn.execute(
-            "INSERT INTO users (email, pw_hash) VALUES (%s, %s) RETURNING id",
-            (email, hash_pw(body.password)),
-        ).fetchone()["id"]
-        db.seed_user(conn, uid)
-    request.session["uid"] = uid
-    return {"email": email}
+    created = supa.sign_up(body.email.lower().strip(), body.password)
+
+    # With email confirmation switched on, signup returns a user but no session.
+    if not created.get("access_token"):
+        raise HTTPException(400, "Account created. Check your email to confirm it, then sign in.")
+
+    session = _session_response(created)
+    supa.seed_user(session["access_token"], created["user"]["id"])
+    return session
 
 
 @app.post("/api/login")
-def login(body: Credentials, request: Request):
-    email = body.email.lower().strip()
-    with db.pool.connection() as conn:
-        user = conn.execute("SELECT id, pw_hash FROM users WHERE email=%s", (email,)).fetchone()
-    if not user or not verify_pw(body.password, user["pw_hash"]):
-        raise HTTPException(401, "Incorrect email or password")
-    request.session["uid"] = user["id"]
-    return {"email": email}
+def login(body: Credentials):
+    auth = supa.sign_in(body.email.lower().strip(), body.password)
+    session = _session_response(auth)
+    # A user created outside this app (or one whose seeding failed) still needs lookups.
+    if not supa.select(session["access_token"], "categories", {"select": "id", "limit": "1"}):
+        supa.seed_user(session["access_token"], auth["user"]["id"])
+    return session
+
+
+class RefreshIn(BaseModel):
+    refresh_token: str
+
+
+@app.post("/api/refresh")
+def refresh(body: RefreshIn):
+    return _session_response(supa.refresh(body.refresh_token))
 
 
 @app.post("/api/logout")
-def logout(request: Request):
-    request.session.clear()
+def logout(me: Session = ME):
+    supa.sign_out(me.token)
     return {"ok": True}
 
 
-@app.get("/api/me")
-def me(request: Request):
-    uid = request.session.get("uid")
-    if not uid:
-        return {"user": None, "invite_required": bool(INVITE_CODE)}
-    with db.pool.connection() as conn:
-        user = conn.execute("SELECT email FROM users WHERE id=%s", (uid,)).fetchone()
-    if not user:
-        request.session.clear()
-        return {"user": None, "invite_required": bool(INVITE_CODE)}
-    return {"user": user["email"], "invite_required": bool(INVITE_CODE)}
+@app.get("/api/config")
+def config():
+    return {"invite_required": bool(INVITE_CODE)}
 
 
 # ---------------------------------------------------------------- lookups
 
-def load_categories(conn, uid):
-    rows = conn.execute("""
-        SELECT c.id, c.name, s.id AS sub_id, s.name AS sub_name
-        FROM categories c LEFT JOIN subcategories s ON s.category_id = c.id
-        WHERE c.user_id = %s ORDER BY c.name, s.name
-    """, (uid,)).fetchall()
-    cats = {}
-    for r in rows:
-        c = cats.setdefault(r["id"], {"id": r["id"], "name": r["name"], "subcategories": []})
-        if r["sub_id"]:
-            c["subcategories"].append({"id": r["sub_id"], "name": r["sub_name"]})
-    return list(cats.values())
+def load_categories(me: Session) -> list:
+    cats = supa.select(me.token, "categories", {"select": "id,name", "order": "name"})
+    subs = supa.select(me.token, "subcategories",
+                       {"select": "id,name,category_id", "order": "name"})
+    by_cat = {}
+    for s in subs:
+        by_cat.setdefault(s["category_id"], []).append({"id": s["id"], "name": s["name"]})
+    return [{**c, "subcategories": by_cat.get(c["id"], [])} for c in cats]
 
 
-def load_limits(conn, uid):
-    return [dict(r) for r in conn.execute("""
-        SELECT l.id, l.kind, l.amount, c.name AS category
-        FROM limits l LEFT JOIN categories c ON c.id = l.category_id
-        WHERE l.user_id = %s ORDER BY l.kind, c.name
-    """, (uid,)).fetchall()]
+def load_limits(me: Session) -> list:
+    rows = supa.select(me.token, "limits",
+                       {"select": "id,kind,amount,category_id,categories(name)", "order": "kind"})
+    return [{"id": r["id"], "kind": r["kind"], "amount": float(r["amount"]),
+             "category": (r.get("categories") or {}).get("name")} for r in rows]
 
 
 @app.get("/api/bootstrap")
-def bootstrap(uid: int = UID):
-    with db.pool.connection() as conn:
-        return {
-            "categories": load_categories(conn, uid),
-            "payment_methods": db.PAYMENT_METHODS,
-            "limits": [{**l, "amount": float(l["amount"])} for l in load_limits(conn, uid)],
-        }
+def bootstrap(me: Session = ME):
+    return {
+        "categories": load_categories(me),
+        "payment_methods": supa.PAYMENT_METHODS,
+        "limits": load_limits(me),
+    }
 
 
 class CategoryIn(BaseModel):
@@ -148,38 +133,27 @@ class CategoryIn(BaseModel):
 
 
 @app.post("/api/categories")
-def add_category(body: CategoryIn, uid: int = UID):
+def add_category(body: CategoryIn, me: Session = ME):
     name = body.name.strip()
-    with db.pool.connection() as conn:
-        if body.category_id:  # adding a sub-category
-            own(conn, "categories", body.category_id, uid)
-            conn.execute("INSERT INTO subcategories (category_id, name) VALUES (%s, %s)"
-                         " ON CONFLICT DO NOTHING", (body.category_id, name))
-        else:
-            conn.execute("INSERT INTO categories (user_id, name) VALUES (%s, %s)"
-                         " ON CONFLICT DO NOTHING", (uid, name))
-        return {"categories": load_categories(conn, uid)}
+    if body.category_id:
+        supa.insert(me.token, "subcategories",
+                    {"user_id": me.user_id, "category_id": body.category_id, "name": name},
+                    returning=False)
+    else:
+        supa.insert(me.token, "categories",
+                    {"user_id": me.user_id, "name": name}, returning=False)
+    return {"categories": load_categories(me)}
 
 
 @app.delete("/api/categories/{cid}")
-def del_category(cid: int, sub: bool = False, uid: int = UID):
-    with db.pool.connection() as conn:
-        if sub:
-            conn.execute("""DELETE FROM subcategories WHERE id=%s AND category_id IN
-                            (SELECT id FROM categories WHERE user_id=%s)""", (cid, uid))
-        else:
-            own(conn, "categories", cid, uid)
-            if conn.execute("SELECT 1 FROM expenses WHERE category_id=%s LIMIT 1", (cid,)).fetchone():
-                raise HTTPException(409, "Category is in use by existing transactions")
-            conn.execute("DELETE FROM categories WHERE id=%s AND user_id=%s", (cid, uid))
-        return {"categories": load_categories(conn, uid)}
-
-
-def own(conn, table, row_id, uid):
-    """Ownership guard. `table` is always a literal from this module, never user input."""
-    if not conn.execute(f"SELECT 1 FROM {table} WHERE id=%s AND user_id=%s",
-                        (row_id, uid)).fetchone():
-        raise HTTPException(404, "Not found")
+def del_category(cid: int, sub: bool = False, me: Session = ME):
+    if sub:
+        supa.delete(me.token, "subcategories", {"id": f"eq.{cid}"})
+    else:
+        if supa.select(me.token, "expenses", {"select": "id", "category_id": f"eq.{cid}", "limit": "1"}):
+            raise HTTPException(409, "Category is in use by existing transactions")
+        supa.delete(me.token, "categories", {"id": f"eq.{cid}"})
+    return {"categories": load_categories(me)}
 
 
 # ---------------------------------------------------------------- expenses
@@ -195,7 +169,7 @@ class ExpenseIn(BaseModel):
     @field_validator("payment_method")
     @classmethod
     def _pm(cls, v):
-        if v not in db.PAYMENT_METHODS:
+        if v not in supa.PAYMENT_METHODS:
             raise ValueError("Invalid payment method")
         return v
 
@@ -206,63 +180,54 @@ class ExpenseIn(BaseModel):
             raise ValueError("Date out of range")
         return v
 
+    def row(self, user_id: str) -> dict:
+        return {"user_id": user_id, "txn_date": self.txn_date.isoformat(), "amount": self.amount,
+                "category_id": self.category_id, "subcategory_id": self.subcategory_id,
+                "description": self.description.strip(), "payment_method": self.payment_method}
 
-def check_refs(conn, body: ExpenseIn, uid: int):
-    own(conn, "categories", body.category_id, uid)
-    if body.subcategory_id and not conn.execute(
-        "SELECT 1 FROM subcategories WHERE id=%s AND category_id=%s",
-        (body.subcategory_id, body.category_id),
-    ).fetchone():
+
+def check_refs(body: ExpenseIn, me: Session):
+    """RLS already blocks other people's rows; this turns a silent 0-row write into a clear error."""
+    if not supa.select(me.token, "categories", {"select": "id", "id": f"eq.{body.category_id}"}):
+        raise HTTPException(404, "Category not found")
+    if body.subcategory_id and not supa.select(
+            me.token, "subcategories",
+            {"select": "id", "id": f"eq.{body.subcategory_id}",
+             "category_id": f"eq.{body.category_id}"}):
         raise HTTPException(400, "Sub-category does not belong to that category")
 
 
 @app.post("/api/expenses")
-def add_expense(body: ExpenseIn, uid: int = UID):
-    with db.pool.connection() as conn:
-        check_refs(conn, body, uid)
-        row = conn.execute("""
-            INSERT INTO expenses (user_id, txn_date, amount, category_id, subcategory_id,
-                                  description, payment_method)
-            VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id
-        """, (uid, body.txn_date, body.amount, body.category_id, body.subcategory_id,
-              body.description.strip(), body.payment_method)).fetchone()
-    return {"id": row["id"]}
+def add_expense(body: ExpenseIn, me: Session = ME):
+    check_refs(body, me)
+    created = supa.insert(me.token, "expenses", body.row(me.user_id))
+    return {"id": created[0]["id"]}
 
 
 @app.put("/api/expenses/{eid}")
-def edit_expense(eid: int, body: ExpenseIn, uid: int = UID):
-    with db.pool.connection() as conn:
-        check_refs(conn, body, uid)
-        updated = conn.execute("""
-            UPDATE expenses SET txn_date=%s, amount=%s, category_id=%s, subcategory_id=%s,
-                   description=%s, payment_method=%s
-            WHERE id=%s AND user_id=%s RETURNING id
-        """, (body.txn_date, body.amount, body.category_id, body.subcategory_id,
-              body.description.strip(), body.payment_method, eid, uid)).fetchone()
+def edit_expense(eid: int, body: ExpenseIn, me: Session = ME):
+    check_refs(body, me)
+    updated = supa.update(me.token, "expenses", {"id": f"eq.{eid}"}, body.row(me.user_id))
     if not updated:
         raise HTTPException(404, "Transaction not found")
     return {"id": eid}
 
 
 @app.delete("/api/expenses/{eid}")
-def del_expense(eid: int, uid: int = UID):
-    with db.pool.connection() as conn:
-        conn.execute("DELETE FROM expenses WHERE id=%s AND user_id=%s", (eid, uid))
+def del_expense(eid: int, me: Session = ME):
+    supa.delete(me.token, "expenses", {"id": f"eq.{eid}"})
     return {"ok": True}
 
 
-def fetch_rows(conn, uid):
-    return [{"id": r["id"], "d": r["txn_date"], "amount": float(r["amount"]),
-             "category": r["category"], "subcategory": r["subcategory"],
-             "description": r["description"], "payment": r["payment_method"]}
-            for r in conn.execute("""
-                SELECT e.id, e.txn_date, e.amount, e.description, e.payment_method,
-                       e.category_id, e.subcategory_id, c.name AS category, s.name AS subcategory
-                FROM expenses e
-                JOIN categories c ON c.id = e.category_id
-                LEFT JOIN subcategories s ON s.id = e.subcategory_id
-                WHERE e.user_id = %s ORDER BY e.txn_date DESC, e.id DESC
-            """, (uid,)).fetchall()]
+def fetch_rows(me: Session) -> list:
+    rows = supa.select(me.token, "expenses", {
+        "select": "id,txn_date,amount,description,payment_method,categories(name),subcategories(name)",
+        "order": "txn_date.desc,id.desc",
+    })
+    return [{"id": r["id"], "d": date.fromisoformat(r["txn_date"]), "amount": float(r["amount"]),
+             "category": (r.get("categories") or {}).get("name") or "Uncategorised",
+             "subcategory": (r.get("subcategories") or {}).get("name"),
+             "description": r["description"], "payment": r["payment_method"]} for r in rows]
 
 
 class Filters(BaseModel):
@@ -284,23 +249,18 @@ class Filters(BaseModel):
 
 
 @app.post("/api/analytics")
-def get_analytics(uid: int = UID, filters: Optional[Filters] = None):
+def get_analytics(me: Session = ME, filters: Optional[Filters] = None):
     filters = filters or Filters()
-    with db.pool.connection() as conn:
-        rows = fetch_rows(conn, uid)
-        limits = [{**l, "amount": float(l["amount"])} for l in load_limits(conn, uid)]
-    result = analytics.compute(rows, filters.as_dict(), limits)
+    rows = fetch_rows(me)
+    result = analytics.compute(rows, filters.as_dict(), load_limits(me))
     result["transactions"] = [
         {"id": r["id"], "date": r["d"].isoformat(), "amount": r["amount"], "category": r["category"],
          "subcategory": r["subcategory"], "description": r["description"], "payment": r["payment"]}
         for r in analytics.apply_filters(rows, filters.as_dict())
     ]
-    result["available"] = {
-        "years": sorted({r["d"].year for r in rows}, reverse=True),
-        "first_entry": min((r["d"] for r in rows), default=None),
-    }
-    if result["available"]["first_entry"]:
-        result["available"]["first_entry"] = result["available"]["first_entry"].isoformat()
+    first = min((r["d"] for r in rows), default=None)
+    result["available"] = {"years": sorted({r["d"].year for r in rows}, reverse=True),
+                           "first_entry": first.isoformat() if first else None}
     return result
 
 
@@ -320,34 +280,33 @@ class LimitIn(BaseModel):
 
 
 @app.post("/api/limits")
-def set_limit(body: LimitIn, uid: int = UID):
+def set_limit(body: LimitIn, me: Session = ME):
     if body.kind == "category" and not body.category_id:
         raise HTTPException(400, "Pick a category for a category limit")
-    with db.pool.connection() as conn:
-        if body.category_id:
-            own(conn, "categories", body.category_id, uid)
-        conn.execute("""
-            INSERT INTO limits (user_id, kind, category_id, amount) VALUES (%s,%s,%s,%s)
-            ON CONFLICT (user_id, kind, COALESCE(category_id, 0))
-            DO UPDATE SET amount = EXCLUDED.amount
-        """, (uid, body.kind, body.category_id if body.kind == "category" else None, body.amount))
-        return {"limits": [{**l, "amount": float(l["amount"])} for l in load_limits(conn, uid)]}
+    cid = body.category_id if body.kind == "category" else None
+    existing = supa.select(me.token, "limits", {
+        "select": "id", "kind": f"eq.{body.kind}",
+        "category_id": f"eq.{cid}" if cid else "is.null"})
+    if existing:
+        supa.update(me.token, "limits", {"id": f"eq.{existing[0]['id']}"}, {"amount": body.amount})
+    else:
+        supa.insert(me.token, "limits",
+                    {"user_id": me.user_id, "kind": body.kind, "category_id": cid,
+                     "amount": body.amount}, returning=False)
+    return {"limits": load_limits(me)}
 
 
 @app.delete("/api/limits/{lid}")
-def del_limit(lid: int, uid: int = UID):
-    with db.pool.connection() as conn:
-        conn.execute("DELETE FROM limits WHERE id=%s AND user_id=%s", (lid, uid))
-        return {"limits": [{**l, "amount": float(l["amount"])} for l in load_limits(conn, uid)]}
+def del_limit(lid: int, me: Session = ME):
+    supa.delete(me.token, "limits", {"id": f"eq.{lid}"})
+    return {"limits": load_limits(me)}
 
 
 # ---------------------------------------------------------------- static
 
 @app.get("/healthz")
 def healthz():
-    with db.pool.connection() as conn:
-        conn.execute("SELECT 1")
-    return {"ok": True}
+    return {"ok": supa.health()}
 
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
